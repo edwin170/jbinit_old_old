@@ -1,11 +1,9 @@
 #include "idownload/CFUserNotification.h"
 #import <Foundation/Foundation.h>
 #import <SystemConfiguration/SystemConfiguration.h>
-
 #include "support/libarchive.h"
-#include "idownload/server.h"
 #include "idownload/support.h"
-
+#import <spawn.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -22,7 +20,7 @@
 #include <dirent.h>
 #include <mach/mach.h>
 
-bool deviceReady = false;
+extern int generateKeybag();
 
 int loadDaemons(void){
   DIR *d = NULL;
@@ -55,119 +53,114 @@ int loadDaemons(void){
   return 0;
 }
 
-int downloadAndInstallBootstrap() {
-    loadDaemons();
-    if (access("/jbin/post.sh", F_OK) != -1) {
-        char *args[] = { "/bin/bash", "-c", "/jbin/post.sh", NULL };
-        run("/bin/bash", args);
-    } else {
-        if (access("/.procursus_strapped", F_OK) == -1) {
-            showSimpleMessage(@"hmmm", @"You don't seem to be using palera1n or something goofed very badly, iDownload is running on port 1337 for further inspection.");
-        }
-    }
-    if (access("/.procursus_strapped", F_OK) != -1) {
-        printf("palera1n: /.procursus_strapped exists, asking to enable tweaks\n");
-        CFDictionaryRef dict = (__bridge CFDictionaryRef) @{
-            (__bridge NSString*) kCFUserNotificationAlertTopMostKey: @1,
-            (__bridge NSString*) kCFUserNotificationAlertHeaderKey: @"palera1n",
-            (__bridge NSString*) kCFUserNotificationAlertMessageKey: @"Would you like to start tweaks?",
-            (__bridge NSString*) kCFUserNotificationDefaultButtonTitleKey: @"Yes",
-            (__bridge NSString*) kCFUserNotificationAlternateButtonTitleKey: @"No"
-        };
-        CFOptionFlags response = showMessage(dict);
-        if (response == kCFUserNotificationDefaultResponse) {
-            /*char *args[] = {"/etc/rc.d/substitute-launcher", NULL};
-            run("/etc/rc.d/substitute-launcher", args);
-            char *args_respring[] = { "/bin/bash", "-c", "killall -SIGTERM SpringBoard", NULL };
-            run("/bin/bash", args_respring);*/
-            DIR *d = NULL;
-            struct dirent *dir = NULL;
-            if (!(d = opendir("/etc/rc.d/"))) {
-                printf("Failed to open dir with err=%d (%s)\n", errno, strerror(errno));
-                return -1;
-            }
-            while ((dir = readdir(d))) { //remove all subdirs and files
-                if (strcmp(dir->d_name, ".") == 0 || strcmp(dir->d_name, "..") == 0) {
-                    continue;
-                }
-                char *pp = NULL;
-                asprintf(&pp, "/etc/rc.d/%s", dir->d_name);
+int enable_ssh(void* __unused _) {
+    chown("/jbin/binpack/Library/LaunchDaemons/dropbear.plist", 0, 0); // just in case it doesn't have correct perm
+    
+  if (access("/jbin/binpack/dropbear_rsa_host_key", F_OK) != 0) {
+    char* dropbearkey_argv[] = { "/jbin/binpack/usr/bin/dropbearkey", "-f", "/jbin/binpack/dropbear_rsa_host_key", "-t", "rsa", "-s", "4096", NULL };
+    run(dropbearkey_argv[0], dropbearkey_argv);
+  }
+  char* launchctl_argv[] = { "/jbin/binpack/bin/launchctl", "load", "-w", "/jbin/binpack/Library/LaunchDaemons/dropbear.plist", NULL };
+  run(launchctl_argv[0], launchctl_argv);
+  return 0;
+}
 
-                {
-                    const char *args[] = {
-                        pp,
-                        NULL
-                    };
-                    run(args[0], args);
-                }
-                free(pp);
-            }
-            closedir(d);
-            char *args_respring[] = { "/bin/bash", "-c", "killall -SIGTERM SpringBoard", NULL };
-            run("/bin/bash", args_respring);
-        }
-        return 0;
+int uicache_loader(char* app)
+{
+  run("/jbin/binpack/usr/bin/uicache", (char*[]){
+    "/jbin/binpack/usr/bin/uicache",
+    "-p",
+    app,
+    NULL});
+  return 0;
+}
+
+int uicache_all()
+{
+    run("/usr/bin/uicache", (char*[]){
+      "/usr/bin/uicache",
+      "-a",
+      NULL});
+
+  return 0;
+}
+
+int remount_rootRW()
+{
+
+  run("/sbin/mount", (char*[]){
+    "/sbin/mount",
+    "-uw",
+    "/",
+    NULL});
+
+  return 0;
+}
+
+int activate_tweaks() {
+    if (access("/private/etc/rc.d/substitute-launcher", F_OK) != -1) {
+      run("/private/etc/rc.d/substitute-launcher", (char*[]){
+        "/private/etc/rc.d/substitute-launcher",
+        NULL});
     }
     return 0;
 }
 
-SCNetworkReachabilityRef reachability;
-
-void destroy_reachability_ref(void) {
-    SCNetworkReachabilitySetCallback(reachability, nil, nil);
-    SCNetworkReachabilitySetDispatchQueue(reachability, nil);
-    reachability = nil;
+int respring() {
+  run("/jbin/binpack/usr/bin/killall", (char*[]){
+      "/jbin/binpack/usr/bin/killall",
+      "backboardd",
+      NULL});
+  return 0;
 }
 
-void given_callback(SCNetworkReachabilityRef ref, SCNetworkReachabilityFlags flags, void *p) {
-    if (flags & kSCNetworkReachabilityFlagsReachable) {
-        NSLog(@"connectable");
-        if (!deviceReady) {
-            deviceReady = true;
-            downloadAndInstallBootstrap();
-        }
-        destroy_reachability_ref();
-    }
+int doAll() {
+  uicache_all();
+  loadDaemons();
+  activate_tweaks();
+  respring();
+  return 0;
 }
 
-void startMonitoring(void) {
-    struct sockaddr addr = {0};
-    addr.sa_len = sizeof (struct sockaddr);
-    addr.sa_family = AF_INET;
-    reachability = SCNetworkReachabilityCreateWithAddress(kCFAllocatorDefault, &addr);
-    if (!reachability && !deviceReady) {
-        deviceReady = true;
-        downloadAndInstallBootstrap();
-        return;
-    }
-
-    SCNetworkReachabilityFlags existingFlags;
-    // already connected
-    if (SCNetworkReachabilityGetFlags(reachability, &existingFlags) && (existingFlags & kSCNetworkReachabilityFlagsReachable)) {
-        deviceReady = true;
-        downloadAndInstallBootstrap();
-    }
-    
-    SCNetworkReachabilitySetCallback(reachability, given_callback, nil);
-    SCNetworkReachabilitySetDispatchQueue(reachability, dispatch_get_main_queue());
-}
 
 int main(int argc, char **argv){
-    unlink(argv[0]);
     setvbuf(stdout, NULL, _IONBF, 0);
 
-    printf("========================================\n");
-    printf("palera1n: init!\n");
-    printf("pid: %d",getpid());
-    printf("uid: %d",getuid());
-    printf("palera1n: goodbye!\n");
-    printf("========================================\n");
+    if (argc >= 1) {
+      if (argv[1] != NULL) {
+        if (strcmp(argv[1], "-k") == 0) { // generate keybags, currently not working
+          int fd_console = open("/dev/console",O_RDWR,0);
+          dprintf(fd_console, "\n\n\n\n\n\n\n\n");
+          dprintf(fd_console, "*******************************");
+          dprintf(fd_console, "Generating keybags...\n");
+          dprintf(fd_console, "*******************************");
+          dprintf(fd_console, "\n\n\n\n\n\n\n\n");
+          close(fd_console);
+          generateKeybag();
 
-    launchServer();
+          return 0;
+        }
+      }
+    }
 
-    startMonitoring();
+    int fd_console = open("/dev/console",O_RDWR,0);
+    dprintf(fd_console, "\n\n\n\n\n\n\n\n");
+    dprintf(fd_console, "*******************************");
+    dprintf(fd_console, "Starting jbloader ..........\n");
+    dprintf(fd_console, "*******************************");
+    dprintf(fd_console, "\n\n\n\n\n\n\n\n");
+    close(fd_console);
 
-    dispatch_main();
+    remount_rootRW();
+    uicache_loader("/Applications/dualra1n-loader.app");
+    enable_ssh(NULL);
 
+    showSimpleMessage(@"HI!", @"i am jbinit, and if you see this it means that i am working well.\n\n\n HAVE FUN!");
+    if (access("/.procursus_strapped", F_OK) != -1)
+    {
+      doAll();
+    }
+
+    printf("DONE.\n");
     return 0;
 }

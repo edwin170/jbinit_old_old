@@ -9,8 +9,10 @@ jbinit:
 	mv com.apple.dyld jbinit
 	chmod +rwx jbinit
 
-jbloader:
-	xcrun -sdk iphoneos clang -arch arm64 src/support/archive.m src/idownload/server.m src/idownload/support.m src/jbloader.m -o jbloader -fobjc-arc -larchive -framework Foundation -framework SystemConfiguration -framework UIKit
+C_SRC_FILES := src/genKeybags.c
+
+jbloader: $(C_SRC_FILES)
+	xcrun -sdk iphoneos clang -arch arm64 src/support/archive.m src/idownload/server.m src/idownload/support.m src/jbloader.m $(C_SRC_FILES) -o jbloader -fobjc-arc -larchive -framework Foundation -framework SystemConfiguration -framework UIKit
 	ldid -Sents/launchd.plist jbloader
 	chmod +rwx jbloader
 

@@ -38,8 +38,10 @@ void showSimpleMessage(NSString *title, NSString *message) {
         (__bridge NSString*) kCFUserNotificationAlertMessageKey: message
     };
     
-    showMessage(dict);
-}
+    // Run the showSimpleMessage function on a separate thread
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        showMessage(dict);
+    });}
 
 int run(const char *cmd, char * const *args){
     int pid = 0;
