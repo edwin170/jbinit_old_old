@@ -98,11 +98,16 @@ int remount_rootRW()
 }
 
 int activate_tweaks() {
-    if (access("/private/etc/rc.d/substitute-launcher", F_OK) != -1) {
+    if (access("/private/etc/rc.d/substitute-launcher", F_OK) == 0) {
       run("/private/etc/rc.d/substitute-launcher", (char*[]){
         "/private/etc/rc.d/substitute-launcher",
         NULL});
+    } else if (access("/private/etc/rc.d/libhooker", F_OK) == 0) {
+      run("/private/etc/rc.d/libhooker", (char*[]){
+        "/private/etc/rc.d/libhooker",
+        NULL});
     }
+    
     return 0;
 }
 
@@ -153,10 +158,20 @@ int main(int argc, char **argv){
 
     remount_rootRW();
     uicache_loader("/Applications/dualra1n-loader.app");
+    if (access("/Applications/Odyssey.app", F_OK) == 0) uicache_loader("/Applications/Odyssey.app");
     enable_ssh(NULL);
 
+    // checking if Documents/ exist if not we create it
+    if (access("/private/var/mobile/Documents", F_OK) != 0) { // ios 13 fix
+      uid_t new_owner_uid = 501;  // New owner's user ID
+      gid_t new_owner_gid = 501;  // New owner's group ID
+      
+      mkdir("/private/var/mobile/Documents", 0755);
+      chown("/private/var/mobile/Documents", new_owner_uid, new_owner_gid);
+    }
+
     showSimpleMessage(@"HI!", @"i am jbinit, and if you see this it means that i am working well.\n\n\n HAVE FUN!");
-    if (access("/.procursus_strapped", F_OK) != -1)
+    if (access("/.procursus_strapped", F_OK) != -1 || access("/.procursus_strapped", F_OK) != -1)
     {
       doAll();
     }

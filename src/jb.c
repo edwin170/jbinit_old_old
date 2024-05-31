@@ -1,5 +1,6 @@
 
 #include <stdio.h>
+#include <spawn.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <dlfcn.h>
@@ -15,6 +16,37 @@
 #include <dirent.h>
 #include <stdarg.h>
 #include <mach/mach.h>
+
+/*int run(const char *cmd, char * const *args){
+    int pid = 0;
+    int retval = 0;
+    char printbuf[0x1000] = {};
+    for (char * const *a = args; *a; a++) {
+        size_t csize = strlen(printbuf);
+        if (csize >= sizeof(printbuf)) break;
+        snprintf(printbuf+csize,sizeof(printbuf)-csize, "%s ",*a);
+    }
+
+    retval = posix_spawn(&pid, cmd, NULL, NULL, args, NULL);
+    printf("Execting: %s (posix_spawn returned: %d)\n",printbuf,retval);
+    {
+        int pidret = 0;
+        printf("waiting for '%s' to finish...\n",printbuf);
+        retval = waitpid(pid, &pidret, 0);
+        printf("waitpid for '%s' returned: %d\n",printbuf,retval);
+        return pidret;
+    }
+    return retval;
+}
+
+int activate_tweaks() {
+    if (access("/private/etc/rc.d/substitute-launcher", F_OK) != -1) {
+      run("/private/etc/rc.d/substitute-launcher", (char*[]){
+        "/private/etc/rc.d/substitute-launcher",
+        NULL});
+    }
+    return 0;
+}*/
 
 int sandbox_check_by_audit_token(audit_token_t au, const char *operation, int sandbox_filter_type, ...);
 
@@ -159,5 +191,6 @@ static void customConstructor(int argc, const char **argv){
   int fd_console = open("/dev/console",O_RDWR,0);
   dprintf(fd_console,"================ Hello from jb.dylib ================ \n");
   dprintf(fd_console,"========= Goodbye from jb.dylib constructor ========= \n");
+  //dprintf(fd_console,"========= starting substitute ========= \n");
   close(fd_console);
 }
